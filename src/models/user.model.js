@@ -50,13 +50,16 @@ const userSchema = new Schema(
 )
 
 // password encrypt
-userSchema.pre("save",async function (next) {
-    if (!this.isModified("password")) return next();
+userSchema.pre("save", async function (next) {
+    
+    // password is only hashed when modified.
+    if (!this.isModified("password")) return next(); 
         
     this.password = await bcrypt.hash(this.password, 10)
     next()
 })
 
+// Compare the entered plain-text password with the hashed password stored in the database
 userSchema.methods.isPasswordCorrect = async function (password) {
     return await bcrypt.compare(password, this.password)
 }
@@ -75,6 +78,7 @@ userSchema.methods.generateAccessToken = function () {
         }
     )
 }
+
 userSchema.methods.generateRefreshToken = function () {
     return jwt.sign(
         {
