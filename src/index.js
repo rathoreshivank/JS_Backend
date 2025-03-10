@@ -1,4 +1,3 @@
-// require('dotenv').config({path: "./env"})
 import dotenv from "dotenv";
 import connectDB from "./db/index.js";
 import { app } from "./app.js";
@@ -7,6 +6,9 @@ dotenv.config({
   path: './.env'
 })
 
+// Add this near the beginning of your app
+console.log("ACCESS_TOKEN_SECRET:", process.env.ACCESS_TOKEN_SECRET ? "Set" : "Not set");
+console.log("ACCESS_REFRESH_SECRET:", process.env.ACCESS_REFRESH_SECRET ? "Set" : "Not set");
 
 
 connectDB()
