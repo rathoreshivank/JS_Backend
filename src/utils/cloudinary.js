@@ -1,5 +1,6 @@
 import { v2 as cloudinary } from "cloudinary"
-import fs from "fs"
+import fs from "fs/promises"
+import { ApiError } from "./ApiError";
 
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -10,17 +11,17 @@ cloudinary.config({
 const uploadOnCloudinary = async (localFilePath) => {
 
     try {
-        if (!localFilePath) return null
+        if (!localFilePath) throw new ApiError("No file path provided");
 
         // Check if the file exists
-        if (!fs.existsSync(localFilePath)) {
-            console.error("File does not exist:", localFilePath);
-            return null;
+        if (!(await fs.stat(localFilePath).catch(() => false))) {
+            throw new ApiError("File does not exist: ${localFilePath}");
         }
 
         // upload the file on cloudinary
         const response = await cloudinary.uploader.upload(localFilePath, {
-            resource_type: "auto"
+            resource_type: "image",
+            folder: "avatars"
         })
 
         // file has been uploaded successfully
@@ -28,18 +29,16 @@ const uploadOnCloudinary = async (localFilePath) => {
         console.log("Cloudinary upload response:", response);
         
         
-        fs.unlinkSync(localFilePath)
+        await fs.unlink(localFilePath)
+        console.log("file uploaded to cloudinary: ", response.secure_url);
         return response
         
-
     } catch (error) {
-        console.error("Error uploading file to Cloudinary:", error);
-
-        // remove the locally saved temporary file 
-        
-        fs.unlinkSync(localFilePath);
-        
-        return null;
+        console.error("Error uploading to Cloudinary:", error.message);
+        await fs.unlink(localFilePath).catch((unlinkErr) =>
+            console.error("Failed to delete local file:", unlinkErr)
+        );
+        throw error;
     }
 }
 
