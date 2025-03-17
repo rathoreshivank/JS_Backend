@@ -4,6 +4,7 @@ import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import jwt from "jsonwebtoken";
+import { v2 as cloudinary } from "cloudinary"
 
 const generateAccessAndRefreshToken = async (userId) => {
   try {
@@ -58,8 +59,8 @@ const registerUser = asyncHandler(async (req, res) => {
 
   const avatarLocalPath =
     req.files?.avatar &&
-    Array.isArray(req.files.avatar) &&
-    req.files.avatar.length > 0
+      Array.isArray(req.files.avatar) &&
+      req.files.avatar.length > 0
       ? req.files.avatar[0].path
       : undefined;
 
@@ -93,6 +94,7 @@ const registerUser = asyncHandler(async (req, res) => {
   const user = await User.create({
     fullName,
     avatar: avatar.url,
+    avatarPublicId: avatar.public_id, // Store the public_id for later deletion
     coverImage: coverImage?.url || "",
     email,
     password,
@@ -331,19 +333,42 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
 
   const avatar = await uploadOnCloudinary(avatarLocalPath);
 
-  if (!avatar.url) {
-    throw new ApiError(400, "Error while uploading on avatar");
+  // Check if upload succeeded
+  if (!avatar?.url) {
+    throw new ApiError(400, "Error while uploading avatar");
   }
+
+  // Fetch the current user to get the old avatar's public_id
+  const currentUser = await User.findById(req.user?._id).select(
+    "avatar avatarPublicId"
+  )
+  if (!currentUser) {
+    throw new ApiError(404, "User not found");
+  }
+
+  const oldAvatarPublicId = currentUser?.avatarPublicId;
+
+  // Update user with new avatar details
 
   const user = await User.findByIdAndUpdate(
     req.user?._id,
     {
       $set: {
         avatar: avatar.url,
+        avatarPublicId: avatar.public_id,
       },
     },
     { new: true }
   ).select("-password");
+
+  if (oldAvatarPublicId) {
+    try {
+      await cloudinary.uploader.destroy(oldAvatarPublicId);
+      console.log(`Deleted old avatar with public_id: ${oldAvatarPublicId}`);
+    } catch (error) {
+      console.error(`Failed to delete old avatar: ${error.message}`);
+    }
+  }
 
   return res
     .status(200)
@@ -378,6 +403,74 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, user, "coverImage updated Sucessfully"));
 });
 
+const getUserChannelProfile = asyncHandler(async (req, res) => {
+  const { username } = req.params;
+
+  if (!username?.trim()) {
+    throw new ApiError(400, "Username is missing");
+  }
+
+  const channel = await User.aggregate([
+    {
+      $match: {
+        username: username?.toLowerCase()
+      }
+    },
+    {
+      $lookup: {
+        from: "subscriptions",
+        localField: "_id",
+        foreignField: "channel",
+        as: "subscribers"
+      }
+    },
+    {
+      $lookup: {
+        from: "subscriptions",
+        localField: "_id",
+        foreignField: "subscriber",
+        as: "subscribedTo"
+      }
+    },
+    {
+      $addFields: {
+        subscribersCount: {
+          $size: "$subscribers"
+        },
+        channelsSubscribedToCount: {
+          $size: "$subscribedTo"
+        },
+        isSubscribed: {
+          $cond: {
+            if: {$in: [req.user?._id, "$subscribers.subscribers"]},
+            then: true,
+            else: false
+          }
+        }
+      }
+    },
+    {
+      $project: {
+        fullName: 1,
+        username: 1,
+        subscribersCount: 1,
+        channelsSubscribedToCount: 1,
+        isSubscribed: 1,
+        avatar: 1,
+        coverImage: 1,
+        email: 1,
+      }
+    }
+  ])
+
+  if (!channel?.length) {
+    throw new ApiError(404, "Channel not found");
+  }
+  return res
+    .status(200)
+    .json(new ApiResponse(200, channel[0], " User channel fetched successfully"));
+})
+
 export {
   registerUser,
   loginUser,
@@ -388,4 +481,5 @@ export {
   updateAccountDetails,
   updateUserAvatar,
   updateUserCoverImage,
+  getUserChannelProfile,
 };
