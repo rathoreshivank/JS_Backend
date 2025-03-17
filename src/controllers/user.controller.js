@@ -138,7 +138,7 @@ const loginUser = asyncHandler(async (req, res) => {
   if (username) query.username = username;
   if (email) query.email = email;
 
-  console.log("Login attempt with query:", query); // Debug log to see the query
+  // console.log("Login attempt with query:", query); // Debug log to see the query
 
   const user = await User.findOne(query);
 
@@ -187,8 +187,8 @@ const logOutUser = asyncHandler(async (req, res) => {
   await User.findByIdAndUpdate(
     req.user._id,
     {
-      $set: {
-        refreshToken: undefined,
+      $unset: {
+        refreshToken: 1, // this removes the field from documnet
       },
     },
     {
